@@ -1,5 +1,8 @@
 import java.io.*;
 import java.net.*;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class ClienteB {
     public static void main(String[] args) {
@@ -7,46 +10,36 @@ public class ClienteB {
         FileOutputStream fileOutputStream = null;
         try {
             socket = new DatagramSocket(9877);
-            byte[] receiveData = new byte[1024];
-            DatagramPacket receivePacket;
-            File pdfFile = new File("received_file.pdf");
-            fileOutputStream = new FileOutputStream(pdfFile);
-
-            // Variables para el seguimiento del progreso
-            long totalBytesReceived = 0;
-            long totalBytesExpected = 0;
-            long lastUpdate = 0;
-            int totalPacketsReceived = 0;
+            Map<Integer, byte[]> receivedPackets = new TreeMap<>();
+            int totalPackets = -1;
 
             System.out.println("Esperando el archivo...");
 
             while (true) {
-                receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                byte[] receiveData = new byte[1028];
+                DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                 socket.receive(receivePacket);
-                totalBytesReceived += receivePacket.getLength();
 
-                // Si es el primer paquete, estimamos el tamaño total del archivo
-                if (totalPacketsReceived == 0) {
-                    // Estimamos el tamaño total del archivo en función del número total de paquetes
-                    totalBytesExpected = receivePacket.getLength() * 10; // Suponiendo 100 paquetes
-                }
-                totalPacketsReceived++;
+                // Leer el número de secuencia y el total de paquetes
+                int seqNum = ((receiveData[0] & 0xFF) << 8) | (receiveData[1] & 0xFF);
+                totalPackets = ((receiveData[2] & 0xFF) << 8) | (receiveData[3] & 0xFF);
 
-                // Calcular el porcentaje de recepción
-                int progress = (int) ((totalBytesReceived * 10) / totalBytesExpected);
+                byte[] fileChunk = Arrays.copyOfRange(receiveData, 4, receivePacket.getLength());
+                receivedPackets.put(seqNum, fileChunk);
 
-                // Mostrar el progreso
-                if (System.currentTimeMillis() - lastUpdate > 500) { // Actualizamos cada 500ms
-                    System.out.printf("Progreso de recepción: %d%% (%d/%d bytes)\n", progress, totalBytesReceived, totalBytesExpected);
-                    lastUpdate = System.currentTimeMillis();
-                }
+                int progress = (receivedPackets.size() * 100) / totalPackets;
+                System.out.printf("Recibido: %d/%d paquetes (%d%%)\n", receivedPackets.size(), totalPackets, progress);
 
-                // Guardar el paquete recibido en el archivo PDF
-                fileOutputStream.write(receivePacket.getData(), 0, receivePacket.getLength());
-                
-                // Si ya hemos recibido todos los paquetes (esto es solo una simulación del tamaño total)
-                if (totalBytesReceived >= totalBytesExpected) {
-                    System.out.println("Transferencia completa.");
+                // Si hemos recibido todos los paquetes, escribirlos en el archivo
+                if (receivedPackets.size() == totalPackets) {
+                    System.out.println("Recepción completa. Guardando archivo...");
+                    File pdfFile = new File("received_file.pdf");
+                    fileOutputStream = new FileOutputStream(pdfFile);
+
+                    for (int i = 0; i < totalPackets; i++) {
+                        fileOutputStream.write(receivedPackets.get(i));
+                    }
+                    System.out.println("Archivo guardado como 'received_file.pdf'");
                     break;
                 }
             }

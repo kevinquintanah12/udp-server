@@ -8,23 +8,36 @@ public class clienteA {
         try {
             socket = new DatagramSocket();
             InetAddress serverAddress = InetAddress.getByName("127.0.0.1");
-            File pdfFile = new File(args[0]);  // Archivo PDF a enviar
+            File pdfFile = new File(args[0]);
             fileInputStream = new FileInputStream(pdfFile);
-            byte[] sendData = new byte[1024];  // Tamaño del buffer de envío
-            int bytesRead;
-            long totalBytes = pdfFile.length();
-            long bytesSent = 0;
+            
+            byte[] fileData = new byte[(int) pdfFile.length()];
+            fileInputStream.read(fileData);
+            
+            int packetSize = 1024;
+            int totalPackets = (int) Math.ceil((double) fileData.length / packetSize);
+            
+            for (int i = 0; i < totalPackets; i++) {
+                int start = i * packetSize;
+                int end = Math.min(start + packetSize, fileData.length);
+                byte[] packetData = new byte[end - start + 4];
 
-            // Enviar el archivo al servidor en bloques
-            while ((bytesRead = fileInputStream.read(sendData)) != -1) {
-                DatagramPacket sendPacket = new DatagramPacket(sendData, bytesRead, serverAddress, 9876);
+                // Encabezado (4 bytes) para el número de paquete
+                packetData[0] = (byte) (i >> 8);
+                packetData[1] = (byte) i;
+                packetData[2] = (byte) (totalPackets >> 8);
+                packetData[3] = (byte) totalPackets;
+
+                // Copiar datos del archivo
+                System.arraycopy(fileData, start, packetData, 4, end - start);
+
+                DatagramPacket sendPacket = new DatagramPacket(packetData, packetData.length, serverAddress, 9876);
                 socket.send(sendPacket);
-                bytesSent += bytesRead;
 
-                // Mostrar progreso
-                int progress = (int) ((bytesSent * 100) / totalBytes);
-                System.out.printf("Enviado: %d/%d bytes (Progreso: %d%%)\n", bytesSent, totalBytes, progress);
+                int progress = (i + 1) * 100 / totalPackets;
+                System.out.printf("Enviando %d/%d paquetes (%d%%)\n", i + 1, totalPackets, progress);
             }
+
             System.out.println("Archivo enviado.");
         } catch (Exception e) {
             e.printStackTrace();
